@@ -1,0 +1,106 @@
+# .clinerules
+
+This document describes the basic rules and practices for our coding sessions.
+
+## Context
+
+- By default, communication is conducted in English. However, if the user requests, we may switch to other languages as needed. The rules here are written in English for broader applicability.
+- The user is more experienced in programming than you, but requests your assistance to save time.
+- Pull requests will be created automatically using `gh` (GitHub CLI) commands.
+- Git commit comments must follow [the Conventional Commits guidelines](https://www.conventionalcommits.org/).
+- If tests fail two or more consecutive times, we pause to **discuss and analyze** the current situation together, then plan a solution approach.
+- The user has an extensive knowledge base (including algorithms, libraries, and GitHub references) and often writes test code while verifying the behavior.
+- You may have difficulties with context-specific details; if any context is unclear, **ask the user for clarification**.
+- If `git status` shows too many changes unrelated to the current task, propose starting a **separate task**. If the user instructs to ignore them, continue as requested.
+
+## General Coding Practices
+
+These practices apply to all programming languages and development workflows.
+
+### Development Workflow
+
+1. **Check the Current Git Context**
+   - Run `git status` and confirm any pending changes.
+
+2. **Implement Code With TDD**
+   - Write or update tests (Red).
+   - Implement minimal code (Green).
+
+3. **Refactor**
+   - Improve clarity and performance.
+
+4. **Linting & Static Analysis**
+   - Fix any issues reported by the linter and verify the changes with tests.
+
+5. **Commit Changes**
+   - Use `git add <files>` and `git commit -m "<commit_message>"` with a Conventional Commits prefix (e.g., `feat:`).
+
+6. **Pull Request**
+   - Use `gh` to create a PR if needed.
+
+### Implementation Style
+
+- **Start small and expand step by step.**
+- **Avoid premature abstraction.**
+- **Use types effectively** to ensure correctness, if the programming language supports a static type system.
+- **If you are developing a web server and an existing API specification is available, ensure that the implementation follows the API spec.**
+- **Perform continuous refactoring** with tests.
+- **Design for testability.**
+  - **Keep functions pure when possible**
+    - Prioritize stateless functions to reduce bugs caused by state mutation. However, if avoiding mutation significantly increases memory usage (due to data copies) or code complexity, allow mutation.
+    - Separate side-effectful operations (e.g., file I/O, network calls) to improve testability. If this separation becomes overly complicated, include side-effectful operations inline and use dummy files or database objects during testing.
+- **Avoid inline code comments whenever possible**  
+  - Prefer self-descriptive naming and documentation comments (e.g., Rustdoc).  
+  - However, if naming and documentation alone are insufficient to explain the code, inline comments may be used as an exception.
+
+### Testing Style
+
+Below is a generic testing style that can be applied to any language:
+
+- **Treat tests as specifications.**
+- If you are developing a web server and an existing API specification is available, ensure that your test code validates compliance with the API spec.
+- **Write tests that are easy to run and maintain.**
+- **Promote in-memory implementations** for repository tests when feasible.
+- In unit tests, while test code should primarily cover public interfaces, if coverage cannot be improved by testing only public interfaces, then testing private methods or functions is allowed as an exception.
+- **Allow parallel execution** where appropriate to speed up tests.
+- **Arrange-Act-Assert** approach:
+  1. Arrange (set up test data and environment)
+  2. Act (execute the function or module)
+  3. Assert (confirm the expected outcomes)
+
+- If a test fails **twice or more in a row**, pause the development and **collaborate** with the user to:
+  - Review the code and the test specifications.
+  - Identify possible logical or design flaws.
+  - Decide on a solution strategy together.
+
+#### TDD Fundamentals
+
+- **Use an “assert-first” approach**: define the expected outcome before writing the actual test actions.
+  - **Red**: Start by writing a failing test.
+  - **Green**: Implement just enough code to make the test pass.
+  - **Refactor**: Improve the existing code without changing functionality.
+
+**Testing Is Specification**
+- Your tests act as the documentation for how the code is intended to behave.
+
+**Assert-Act-Arrange Order**
+1. Define the **Assertion** (expected result).
+2. Define the **Action** (the operation to test).
+3. Then **Arrange** (the setup for the test).
+
+**Refactoring Tools**
+- Static analysis
+- Coverage measurement
+- Git for version control
+
+### Version Control
+
+1. **Git Status Check**
+   - Before coding or after major changes, run `git status` to confirm there are no unexpected modifications.
+
+2. **Small, Frequent Commits**
+   - Commit at each phase (test creation, minimal implementation, refactoring).
+   - Use **Conventional Commits** for message formats (e.g., `feat:`, `fix:`, `chore:`).
+
+3. **Pull Requests**
+   - If a feature or fix is complete, use `gh` to create a PR for review and merging.
