@@ -1,56 +1,71 @@
 # Brain Knowledge System Design
 
 ## Overview
-The Brain Knowledge System is designed to process natural language queries from users and generate appropriate responses using local org-mode files as a knowledge base.
+A system designed to process natural language queries and generate responses using local org-mode files as a knowledge base, integrating with an MCP server for file operations.
 
 ## Architecture
 
 ```mermaid
 graph TD
-    A[User Query] --> B[HTTP Server]
+    A[User Query] --> B[Client]
     B --> C[Ollama API]
     C --> D[Keyword Extraction]
-    D --> E[File Search]
-    E --> F[Knowledge Base<br/>org-mode files]
-    F --> G[Response Generation]
-    G --> B
+    D --> E[MCP Server]
+    E --> F[File Search]
+    F --> G[Knowledge Base<br/>org-mode files]
+    G --> E
+    E --> B
+```
+
+## Sequence
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Client
+    participant Ollama
+    participant MCP
+    participant Files
+
+    User->>Client: Query text
+    Client->>Ollama: Extract keywords
+    Ollama-->>Client: Keywords
+
+    Client->>MCP: search_files(keywords)
+    MCP->>Files: Search matching files
+    Files-->>MCP: Matching file paths
+    MCP-->>Client: File paths
+
+    Client->>MCP: get_contents(file_paths)
+    MCP->>Files: Read files
+    Files-->>MCP: File contents
+    MCP-->>Client: File contents
+
+    Client->>Ollama: Generate response
+    Ollama-->>Client: Generated response
+    Client-->>User: Final response
 ```
 
 ## Components
 
-### 1. HTTP Server
-- Based on axum framework
-- Handles JSON requests/responses
-- Endpoint: `http://localhost:3000/api/query`
+### 1. Client
+- Handles query processing workflow
+- Integrates with Ollama for NLP tasks
+- Coordinates with MCP server for file operations
 
 ### 2. Ollama Integration
 - Keyword extraction: Extracts relevant keywords from user queries
 - Response generation: Generates responses based on searched file contents
 
-### 3. File Search
-- Uses `rg` (ripgrep) command
-- Parallel keyword-based search
-- File sorting based on relevance
-
-## API Interface
-
-### Query Endpoint
-- **URL**: `/api/query`
-- **Method**: POST
-- **Request Format**:
-  ```json
-  {
-    "text": "Natural language query"
-  }
-  ```
-- **Response Format**:
-  ```json
-  {
-    "answer": "Generated response",
-    "file_paths": ["Referenced file paths"],
-    "error_message": "Error message (optional)"
-  }
-  ```
+### 3. MCP Server
+- Tool: search_files
+  - Input: Keywords from query
+  - Output: List of relevant file paths
+  - Features: Parallel search, relevance sorting
+- Tool: get_contents
+  - Input: List of file paths
+  - Output: File contents
+  - Features: Content retrieval and formatting
 
 ## Configuration
 
@@ -66,33 +81,15 @@ max_context_length = 4096
 root_path = "/path/to/org/files"
 max_files = 5  # Maximum number of files for search results
 
-[search]
-ripgrep_path = "/usr/bin/rg"
-parallel_searches = 4  # Number of parallel searches
+[mcp]
+server_name = "brain-files"  # MCP server identifier
 ```
-
-## Processing Flow
-
-1. **Keyword Extraction**
-   - Input: User's natural language query
-   - Process: Keyword extraction using Ollama
-   - Output: List of relevant keywords
-
-2. **File Search**
-   - Input: Extracted keywords
-   - Process: Parallel execution of rg commands
-   - Output: List of relevant file paths (sorted by score)
-
-3. **Response Generation**
-   - Input: Contents of searched files
-   - Process: Response generation using Ollama
-   - Output: Natural language response
 
 ## Error Handling
 
-- File search failure: Immediate error return
-- Response generation failure: Return file paths list only
-- Configuration file issues: Startup error
+- File search failure: Return error with details
+- Content retrieval failure: Return partial results if available
+- Configuration file issues: Startup error with config validation
 
 ## Future Enhancements
 
