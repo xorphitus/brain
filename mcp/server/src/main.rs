@@ -1,7 +1,20 @@
+mod config;
+
+use anyhow::Result;
+use rayon::prelude::*;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::fs;
 use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use walkdir::WalkDir;
 
+use config::Config;
+
+// MCP protocol structures
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct McpRequest {
@@ -31,8 +44,10 @@ struct McpErrorDetail {
     message: String,
 }
 
+// Server implementation
 struct BrainServer {
     tools: Vec<Tool>,
+    config: Arc<Config>,
 }
 
 struct Tool {
@@ -41,26 +56,62 @@ struct Tool {
     input_schema: Value,
 }
 
+// Search result structure
+#[derive(Debug, Serialize)]
+struct SearchResult {
+    path: String,
+    relevance: f64,
+}
+
 impl BrainServer {
-    fn new() -> Self {
-        let mut server = Self { tools: Vec::new() };
+    fn new() -> Result<Self> {
+        let config = load_config()?;
+        let config = Arc::new(config);
+        
+        let mut server = Self { 
+            tools: Vec::new(),
+            config,
+        };
         server.register_tools();
-        server
+        Ok(server)
     }
 
     fn register_tools(&mut self) {
+        // search_files tool
         self.tools.push(Tool {
-            name: "query".to_string(),
-            description: "Process a text query".to_string(),
+            name: "search_files".to_string(),
+            description: "Search for relevant files based on keywords".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "The query text"
+                    "keywords": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Keywords to search for in files"
                     }
                 },
-                "required": ["text"]
+                "required": ["keywords"]
+            }),
+        });
+
+        // get_contents tool
+        self.tools.push(Tool {
+            name: "get_contents".to_string(),
+            description: "Get contents of specified files".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file_paths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Paths of files to retrieve contents from"
+                    }
+                },
+                "required": ["file_paths"]
             }),
         });
     }
@@ -69,7 +120,7 @@ impl BrainServer {
         match request.method.as_str() {
             "list_tools" => Ok(McpResponse {
                 jsonrpc: "2.0".to_string(),
-                id: request.id,
+                id: request.id.clone(),
                 result: json!({
                     "tools": self.tools.iter().map(|tool| json!({
                         "name": tool.name,
@@ -79,24 +130,82 @@ impl BrainServer {
                 }),
             }),
             "call_tool" => {
-                if let Some(tool_name) = request.params.get("name") {
-                    if tool_name == "query" {
-                        if let Some(args) = request.params.get("arguments") {
-                            if let Some(text) = args.get("text") {
-                                return Ok(McpResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id: request.id,
-                                    result: json!({
-                                        "content": [{
-                                            "type": "text",
-                                            "text": format!("Hello! Your query was: {}", text)
-                                        }]
-                                    }),
-                                });
+                if let Some(tool_name) = request.params.get("name").and_then(|v| v.as_str()) {
+                    match tool_name {
+                        "search_files" => {
+                            if let Some(args) = request.params.get("arguments") {
+                                if let Some(keywords) = args.get("keywords").and_then(|k| k.as_array()) {
+                                    let keywords: Vec<String> = keywords
+                                        .iter()
+                                        .filter_map(|k| k.as_str().map(|s| s.to_string()))
+                                        .collect();
+                                    
+                                    match self.search_files(&keywords) {
+                                        Ok(results) => {
+                                            return Ok(McpResponse {
+                                                jsonrpc: "2.0".to_string(),
+                                                id: request.id,
+                                                result: json!({
+                                                    "content": [{
+                                                        "type": "text",
+                                                        "text": serde_json::to_string_pretty(&results).unwrap()
+                                                    }]
+                                                }),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            return Err(McpError {
+                                                jsonrpc: "2.0".to_string(),
+                                                id: request.id,
+                                                error: McpErrorDetail {
+                                                    code: -32603,
+                                                    message: format!("Internal error: {}", e),
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         }
+                        "get_contents" => {
+                            if let Some(args) = request.params.get("arguments") {
+                                if let Some(file_paths) = args.get("file_paths").and_then(|p| p.as_array()) {
+                                    let file_paths: Vec<String> = file_paths
+                                        .iter()
+                                        .filter_map(|p| p.as_str().map(|s| s.to_string()))
+                                        .collect();
+                                    
+                                    match self.get_contents(&file_paths) {
+                                        Ok(contents) => {
+                                            return Ok(McpResponse {
+                                                jsonrpc: "2.0".to_string(),
+                                                id: request.id,
+                                                result: json!({
+                                                    "content": [{
+                                                        "type": "text",
+                                                        "text": contents
+                                                    }]
+                                                }),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            return Err(McpError {
+                                                jsonrpc: "2.0".to_string(),
+                                                id: request.id,
+                                                error: McpErrorDetail {
+                                                    code: -32603,
+                                                    message: format!("Internal error: {}", e),
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
+                
                 Err(McpError {
                     jsonrpc: "2.0".to_string(),
                     id: request.id,
@@ -116,16 +225,183 @@ impl BrainServer {
             }),
         }
     }
+
+    fn search_files(&self, keywords: &[String]) -> Result<Vec<SearchResult>> {
+        let root_path = Path::new(&self.config.knowledge.root_path);
+        if !root_path.exists() {
+            return Err(anyhow::anyhow!("Knowledge base path does not exist: {}", self.config.knowledge.root_path));
+        }
+
+        // Create regex patterns for each keyword
+        let patterns: Vec<Regex> = keywords
+            .iter()
+            .map(|k| Regex::new(&format!(r"(?i){}", regex::escape(k))))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        // Collect all .org files
+        let files: Vec<PathBuf> = WalkDir::new(root_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().extension().map_or(false, |ext| ext == "org")
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect();
+
+        // Search files in parallel
+        let results: Vec<(PathBuf, f64)> = files
+            .par_iter()
+            .filter_map(|file_path| {
+                match fs::read_to_string(file_path) {
+                    Ok(content) => {
+                        // Calculate relevance score based on keyword matches
+                        let mut score = 0.0;
+                        for pattern in &patterns {
+                            let matches = pattern.find_iter(&content).count();
+                            if matches > 0 {
+                                score += matches as f64;
+                            }
+                        }
+                        
+                        if score > 0.0 {
+                            Some((file_path.clone(), score))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(_) => None,
+                }
+            })
+            .collect();
+
+        // Sort by relevance (descending) and limit to max_files
+        let mut sorted_results = results;
+        sorted_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_results.truncate(self.config.knowledge.max_files);
+
+        // Convert to SearchResult format
+        let search_results = sorted_results
+            .into_iter()
+            .map(|(path, relevance)| {
+                SearchResult {
+                    path: path.to_string_lossy().to_string(),
+                    relevance,
+                }
+            })
+            .collect();
+
+        Ok(search_results)
+    }
+
+    fn get_contents(&self, file_paths: &[String]) -> Result<String> {
+        let mut contents = HashMap::new();
+
+        for path in file_paths {
+            let file_path = Path::new(path);
+            if file_path.exists() {
+                match fs::read_to_string(file_path) {
+                    Ok(content) => {
+                        contents.insert(path.clone(), content);
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading file {}: {}", path, e);
+                        contents.insert(path.clone(), format!("Error reading file: {}", e));
+                    }
+                }
+            } else {
+                contents.insert(path.clone(), "File not found".to_string());
+            }
+        }
+
+        Ok(serde_json::to_string_pretty(&contents)?)
+    }
+}
+
+fn load_config() -> Result<Config> {
+    config::load_config()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::env;
+    use std::fs::File;
+    use std::io::Write as IoWrite;
+    use tempfile::tempdir;
+
+    fn create_test_config() -> (tempfile::TempDir, PathBuf) {
+        let temp_dir = tempdir().unwrap();
+        let config_dir = temp_dir.path().join(".config").join("brain");
+        fs::create_dir_all(&config_dir).unwrap();
+        
+        let config_path = config_dir.join("config.toml");
+        let mut file = File::create(&config_path).unwrap();
+        
+        writeln!(file, "[ollama]").unwrap();
+        writeln!(file, "endpoint = \"http://localhost:11434\"").unwrap();
+        writeln!(file, "model = \"mistral\"").unwrap();
+        writeln!(file, "max_context_length = 4096").unwrap();
+        writeln!(file, "").unwrap();
+        writeln!(file, "[knowledge]").unwrap();
+        writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
+        writeln!(file, "max_files = 5").unwrap();
+        writeln!(file, "").unwrap();
+        writeln!(file, "[mcp]").unwrap();
+        writeln!(file, "server_name = \"brain-files\"").unwrap();
+        
+        // Create a test org file
+        let org_dir = temp_dir.path().join("notes");
+        fs::create_dir_all(&org_dir).unwrap();
+        
+        let test_file = org_dir.join("test.org");
+        let mut file = File::create(&test_file).unwrap();
+        writeln!(file, "* Test Heading").unwrap();
+        writeln!(file, "This is a test file with some keywords.").unwrap();
+        writeln!(file, "It contains information about testing and examples.").unwrap();
+        
+        (temp_dir, config_path)
+    }
+
+    #[test]
+    fn test_load_config() {
+        // This test now uses the config module's load_config function
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        let config = config::load_config();
+        assert!(config.is_ok());
+        
+        let config = config.unwrap();
+        assert_eq!(config.ollama.endpoint, "http://localhost:11434");
+        assert_eq!(config.ollama.model, "mistral");
+        assert_eq!(config.ollama.max_context_length, 4096);
+        assert_eq!(config.knowledge.max_files, 5);
+        assert_eq!(config.mcp.server_name, "brain-files");
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
+    }
 
     #[test]
     fn test_list_tools_format() {
-        let server = BrainServer::new();
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        let server = BrainServer::new().unwrap();
         let request = McpRequest {
             jsonrpc: "2.0".to_string(),
             id: json!(1),
@@ -143,30 +419,52 @@ mod tests {
         if let Value::Object(result) = response.result {
             assert!(result.contains_key("tools"));
             if let Value::Array(tools) = &result["tools"] {
-                assert!(!tools.is_empty());
-                let tool = &tools[0];
-                assert!(tool.get("name").is_some());
-                assert!(tool.get("description").is_some());
-                assert!(tool.get("input_schema").is_some());
+                assert_eq!(tools.len(), 2); // Should have search_files and get_contents
+                
+                // Check search_files tool
+                let search_tool = tools.iter().find(|t| t["name"] == "search_files").unwrap();
+                assert!(search_tool.get("description").is_some());
+                assert!(search_tool.get("input_schema").is_some());
+                
+                // Check get_contents tool
+                let contents_tool = tools.iter().find(|t| t["name"] == "get_contents").unwrap();
+                assert!(contents_tool.get("description").is_some());
+                assert!(contents_tool.get("input_schema").is_some());
             } else {
                 panic!("tools should be an array");
             }
         } else {
             panic!("result should be an object");
         }
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
     }
 
     #[test]
-    fn test_call_tool_query() {
-        let server = BrainServer::new();
+    fn test_search_files() {
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        let server = BrainServer::new().unwrap();
         let request = McpRequest {
             jsonrpc: "2.0".to_string(),
             id: json!(2),
             method: "call_tool".to_string(),
             params: json!({
-                "name": "query",
+                "name": "search_files",
                 "arguments": {
-                    "text": "test query"
+                    "keywords": ["test", "keywords"]
                 }
             }),
         };
@@ -184,21 +482,100 @@ mod tests {
                 assert_eq!(content.len(), 1);
                 let item = &content[0];
                 assert_eq!(item["type"], "text");
-                assert!(item["text"].as_str().unwrap().contains("test query"));
+                
+                // The text should contain our test file
+                let text = item["text"].as_str().unwrap();
+                assert!(text.contains("test.org"));
             } else {
                 panic!("content should be an array");
             }
         } else {
             panic!("result should be an object");
         }
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
+    }
+
+    #[test]
+    fn test_get_contents() {
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        // Get the path to our test file
+        let test_file_path = temp_dir.path().join("notes").join("test.org").to_string_lossy().to_string();
+        
+        let server = BrainServer::new().unwrap();
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(3),
+            method: "call_tool".to_string(),
+            params: json!({
+                "name": "get_contents",
+                "arguments": {
+                    "file_paths": [test_file_path]
+                }
+            }),
+        };
+
+        let response = server.handle_request(request).unwrap();
+        
+        // Verify JSON-RPC 2.0 format
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id, json!(3));
+        
+        // Verify response format
+        if let Value::Object(result) = response.result {
+            assert!(result.contains_key("content"));
+            if let Value::Array(content) = &result["content"] {
+                assert_eq!(content.len(), 1);
+                let item = &content[0];
+                assert_eq!(item["type"], "text");
+                
+                // The text should contain our test file content
+                let text = item["text"].as_str().unwrap();
+                assert!(text.contains("Test Heading"));
+                assert!(text.contains("keywords"));
+            } else {
+                panic!("content should be an array");
+            }
+        } else {
+            panic!("result should be an object");
+        }
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
     }
 
     #[test]
     fn test_method_not_found() {
-        let server = BrainServer::new();
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        let server = BrainServer::new().unwrap();
         let request = McpRequest {
             jsonrpc: "2.0".to_string(),
-            id: json!(3),
+            id: json!(4),
             method: "invalid_method".to_string(),
             params: json!({}),
         };
@@ -207,20 +584,36 @@ mod tests {
         
         // Verify JSON-RPC 2.0 error format
         assert_eq!(error.jsonrpc, "2.0");
-        assert_eq!(error.id, json!(3));
+        assert_eq!(error.id, json!(4));
         assert_eq!(error.error.code, -32601);
         assert_eq!(error.error.message, "Method not found");
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
     }
 
     #[test]
     fn test_invalid_params() {
-        let server = BrainServer::new();
+        let (temp_dir, _) = create_test_config();
+        
+        // Temporarily override HOME to use our test config
+        let original_home = env::var("HOME").ok();
+        env::set_var("HOME", temp_dir.path());
+        
+        let server = BrainServer::new().unwrap();
         let request = McpRequest {
             jsonrpc: "2.0".to_string(),
             id: json!(4),
             method: "call_tool".to_string(),
             params: json!({
-                "name": "query",
+                "name": "search_files",
                 "arguments": {
                     "invalid_param": "test"
                 }
@@ -234,12 +627,29 @@ mod tests {
         assert_eq!(error.id, json!(4));
         assert_eq!(error.error.code, -32602);
         assert_eq!(error.error.message, "Invalid parameters");
+        
+        // Restore original HOME
+        if let Some(home) = original_home {
+            env::set_var("HOME", home);
+        } else {
+            env::remove_var("HOME");
+        }
+        
+        // Clean up
+        drop(temp_dir);
     }
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    let server = BrainServer::new();
+async fn main() -> Result<()> {
+    let server = match BrainServer::new() {
+        Ok(server) => server,
+        Err(e) => {
+            eprintln!("Failed to initialize server: {}", e);
+            return Err(e);
+        }
+    };
+    
     let stdin = io::stdin().lock();
     let mut stdout = io::stdout();
 
