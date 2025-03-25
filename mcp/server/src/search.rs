@@ -89,7 +89,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write as IoWrite;
     use tempfile::tempdir;
-    use crate::config::{Config, OllamaConfig, KnowledgeConfig, McpConfig};
+    use crate::config::{Config, create_test_config_for_tests};
 
     fn create_test_environment() -> (tempfile::TempDir, Config) {
         let temp_dir = tempdir().unwrap();
@@ -104,21 +104,8 @@ mod tests {
         writeln!(file, "This is a test file with some keywords.").unwrap();
         writeln!(file, "It contains information about testing and examples.").unwrap();
         
-        // Create test config
-        let config = Config {
-            ollama: OllamaConfig {
-                endpoint: "http://localhost:11434".to_string(),
-                model: "mistral".to_string(),
-                max_context_length: 4096,
-            },
-            knowledge: KnowledgeConfig {
-                root_path: temp_dir.path().to_string_lossy().to_string(),
-                max_files: 5,
-            },
-            mcp: McpConfig {
-                server_name: "brain-files".to_string(),
-            },
-        };
+        // Create test config using the helper function
+        let config = create_test_config_for_tests(temp_dir.path());
         
         (temp_dir, config)
     }

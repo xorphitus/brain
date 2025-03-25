@@ -239,11 +239,6 @@ mod tests {
         let config_path = config_dir.join("config.toml");
         let mut file = File::create(&config_path).unwrap();
         
-        writeln!(file, "[ollama]").unwrap();
-        writeln!(file, "endpoint = \"http://localhost:11434\"").unwrap();
-        writeln!(file, "model = \"mistral\"").unwrap();
-        writeln!(file, "max_context_length = 4096").unwrap();
-        writeln!(file, "").unwrap();
         writeln!(file, "[knowledge]").unwrap();
         writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
         writeln!(file, "max_files = 5").unwrap();
@@ -277,9 +272,6 @@ mod tests {
         assert!(config.is_ok());
         
         let config = config.unwrap();
-        assert_eq!(config.ollama.endpoint, "http://localhost:11434");
-        assert_eq!(config.ollama.model, "mistral");
-        assert_eq!(config.ollama.max_context_length, 4096);
         assert_eq!(config.knowledge.max_files, 5);
         assert_eq!(config.mcp.server_name, "brain-files");
         

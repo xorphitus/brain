@@ -7,16 +7,8 @@ use std::path::{Path, PathBuf};
 // Configuration structures
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub ollama: OllamaConfig,
     pub knowledge: KnowledgeConfig,
     pub mcp: McpConfig,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OllamaConfig {
-    pub endpoint: String,
-    pub model: String,
-    pub max_context_length: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +54,20 @@ pub fn get_default_config_path() -> Result<PathBuf> {
     Ok(config_path)
 }
 
+/// Creates a test configuration for testing purposes
+#[cfg(test)]
+pub fn create_test_config_for_tests(root_path: &Path) -> Config {
+    Config {
+        knowledge: KnowledgeConfig {
+            root_path: root_path.to_string_lossy().to_string(),
+            max_files: 5,
+        },
+        mcp: McpConfig {
+            server_name: "brain-files".to_string(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,11 +84,6 @@ mod tests {
         let config_path = config_dir.join("config.toml");
         let mut file = File::create(&config_path).unwrap();
         
-        writeln!(file, "[ollama]").unwrap();
-        writeln!(file, "endpoint = \"http://localhost:11434\"").unwrap();
-        writeln!(file, "model = \"mistral\"").unwrap();
-        writeln!(file, "max_context_length = 4096").unwrap();
-        writeln!(file, "").unwrap();
         writeln!(file, "[knowledge]").unwrap();
         writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
         writeln!(file, "max_files = 5").unwrap();
@@ -101,9 +102,6 @@ mod tests {
         assert!(config.is_ok());
         
         let config = config.unwrap();
-        assert_eq!(config.ollama.endpoint, "http://localhost:11434");
-        assert_eq!(config.ollama.model, "mistral");
-        assert_eq!(config.ollama.max_context_length, 4096);
         assert_eq!(config.knowledge.max_files, 5);
         assert_eq!(config.mcp.server_name, "brain-files");
         
@@ -123,9 +121,6 @@ mod tests {
         assert!(config.is_ok());
         
         let config = config.unwrap();
-        assert_eq!(config.ollama.endpoint, "http://localhost:11434");
-        assert_eq!(config.ollama.model, "mistral");
-        assert_eq!(config.ollama.max_context_length, 4096);
         assert_eq!(config.knowledge.max_files, 5);
         assert_eq!(config.mcp.server_name, "brain-files");
         
