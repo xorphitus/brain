@@ -32,12 +32,6 @@ These practices apply to all programming languages and development workflows.
 4. **Linting & Static Analysis**
    - Fix any issues reported by the linter and verify the changes with tests.
 
-5. **Commit Changes**
-   - Use `git add <files>` and `git commit -m "<commit_message>"` with a Conventional Commits prefix (e.g., `feat:`).
-
-6. **Pull Request**
-   - Use `gh` to create a PR if needed.
-
 ### Implementation Style
 
 - **Start small and expand step by step.**
@@ -92,15 +86,3 @@ Below is a generic testing style that can be applied to any language:
 - Static analysis
 - Coverage measurement
 - Git for version control
-
-### Version Control
-
-1. **Git Status Check**
-   - Before coding or after major changes, run `git status` to confirm there are no unexpected modifications.
-
-2. **Small, Frequent Commits**
-   - Commit at each phase (test creation, minimal implementation, refactoring).
-   - Use **Conventional Commits** for message formats (e.g., `feat:`, `fix:`, `chore:`).
-
-3. **Pull Requests**
-   - If a feature or fix is complete, use `gh` to create a PR for review and merging.
