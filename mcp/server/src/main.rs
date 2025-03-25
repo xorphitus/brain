@@ -1,16 +1,14 @@
 mod config;
+mod search;
+mod content;
 
 use anyhow::Result;
-use rayon::prelude::*;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use walkdir::WalkDir;
 
 use config::Config;
 
@@ -54,13 +52,6 @@ struct Tool {
     name: String,
     description: String,
     input_schema: Value,
-}
-
-// Search result structure
-#[derive(Debug, Serialize)]
-struct SearchResult {
-    path: String,
-    relevance: f64,
 }
 
 impl BrainServer {
@@ -140,7 +131,7 @@ impl BrainServer {
                                         .filter_map(|k| k.as_str().map(|s| s.to_string()))
                                         .collect();
                                     
-                                    match self.search_files(&keywords) {
+                                    match search::search_files(&self.config, &keywords) {
                                         Ok(results) => {
                                             return Ok(McpResponse {
                                                 jsonrpc: "2.0".to_string(),
@@ -175,7 +166,7 @@ impl BrainServer {
                                         .filter_map(|p| p.as_str().map(|s| s.to_string()))
                                         .collect();
                                     
-                                    match self.get_contents(&file_paths) {
+                                    match content::get_contents(&file_paths) {
                                         Ok(contents) => {
                                             return Ok(McpResponse {
                                                 jsonrpc: "2.0".to_string(),
@@ -224,96 +215,6 @@ impl BrainServer {
                 },
             }),
         }
-    }
-
-    fn search_files(&self, keywords: &[String]) -> Result<Vec<SearchResult>> {
-        let root_path = Path::new(&self.config.knowledge.root_path);
-        if !root_path.exists() {
-            return Err(anyhow::anyhow!("Knowledge base path does not exist: {}", self.config.knowledge.root_path));
-        }
-
-        // Create regex patterns for each keyword
-        let patterns: Vec<Regex> = keywords
-            .iter()
-            .map(|k| Regex::new(&format!(r"(?i){}", regex::escape(k))))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        // Collect all .org files
-        let files: Vec<PathBuf> = WalkDir::new(root_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().extension().map_or(false, |ext| ext == "org")
-            })
-            .map(|e| e.path().to_path_buf())
-            .collect();
-
-        // Search files in parallel
-        let results: Vec<(PathBuf, f64)> = files
-            .par_iter()
-            .filter_map(|file_path| {
-                match fs::read_to_string(file_path) {
-                    Ok(content) => {
-                        // Calculate relevance score based on keyword matches
-                        let mut score = 0.0;
-                        for pattern in &patterns {
-                            let matches = pattern.find_iter(&content).count();
-                            if matches > 0 {
-                                score += matches as f64;
-                            }
-                        }
-                        
-                        if score > 0.0 {
-                            Some((file_path.clone(), score))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(_) => None,
-                }
-            })
-            .collect();
-
-        // Sort by relevance (descending) and limit to max_files
-        let mut sorted_results = results;
-        sorted_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        sorted_results.truncate(self.config.knowledge.max_files);
-
-        // Convert to SearchResult format
-        let search_results = sorted_results
-            .into_iter()
-            .map(|(path, relevance)| {
-                SearchResult {
-                    path: path.to_string_lossy().to_string(),
-                    relevance,
-                }
-            })
-            .collect();
-
-        Ok(search_results)
-    }
-
-    fn get_contents(&self, file_paths: &[String]) -> Result<String> {
-        let mut contents = HashMap::new();
-
-        for path in file_paths {
-            let file_path = Path::new(path);
-            if file_path.exists() {
-                match fs::read_to_string(file_path) {
-                    Ok(content) => {
-                        contents.insert(path.clone(), content);
-                    }
-                    Err(e) => {
-                        eprintln!("Error reading file {}: {}", path, e);
-                        contents.insert(path.clone(), format!("Error reading file: {}", e));
-                    }
-                }
-            } else {
-                contents.insert(path.clone(), "File not found".to_string());
-            }
-        }
-
-        Ok(serde_json::to_string_pretty(&contents)?)
     }
 }
 
