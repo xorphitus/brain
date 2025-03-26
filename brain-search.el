@@ -54,6 +54,8 @@ Interactively gets a query, runs brain search, and presents results with Consult
                                     :category 'file
                                     :sort nil
                                     :require-match t
+                                    :preview-key consult-preview-key
+                                    :state (consult--file-preview)
                                     :history 'brain-search-history)))
         (when selected
           (find-file selected))))))
