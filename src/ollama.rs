@@ -62,23 +62,19 @@ impl OllamaClient {
 
     /// Generates a response based on the query and context
     pub async fn generate_response(&self, query: &str, context: &str) -> Result<String> {
-        // Truncate context if it's too long
         let context = if context.len() > self.max_context_length {
             &context[..self.max_context_length]
         } else {
             context
         };
 
-        // System prompt defines the role and capabilities
-        let system = "You are a knowledge assistant that provides accurate information based on the given context. Only use the provided information to answer queries. Do not make up facts or use external knowledge.";
+        let system = "You are a knowledge assistant that provides accurate information based on the given context. Only use the provided information to answer queries. Do not make up facts or use external knowledge. Your answer must be in the same language as the query.";
         
-        // User prompt contains the specific task for this query
         let prompt = format!(
             "Use the following information to answer the query:\n\nINFORMATION:\n{}\n\nQUERY:\n{}\n\nANSWER:",
             context, query
         );
 
-        // Create request with system and user prompts
         let request = GenerationRequest::new(self.model.clone(), prompt)
             .system(system);
             
