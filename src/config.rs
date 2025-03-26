@@ -87,15 +87,17 @@ mod tests {
         
         let config_path = config_dir.join("config.toml");
         let mut file = File::create(&config_path).unwrap();
-        
-        writeln!(file, "[knowledge]").unwrap();
-        writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
-        writeln!(file, "max_files = 5").unwrap();
-        writeln!(file, "").unwrap();
-        writeln!(file, "[ollama]").unwrap();
-        writeln!(file, "endpoint = \"http://localhost:11434\"").unwrap();
-        writeln!(file, "model = \"mistral\"").unwrap();
-        writeln!(file, "max_context_length = 4096").unwrap();
+
+        write!(file, r#"# Test configuration
+[knowledge]
+root_path = "{}"
+max_files = 5
+
+[ollama]
+endpoint = "http://localhost:11434"
+model = "mistral"
+max_context_length = 4096
+"#, temp_dir.path().display()).unwrap();
         
         (temp_dir, config_path)
     }
