@@ -5,7 +5,9 @@ mod ollama;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
+use serde::Serialize;
 use std::path::PathBuf;
+
 
 use crate::config::{load_config, load_config_from_path};
 use crate::content::get_contents;
@@ -23,6 +25,24 @@ enum Mode {
     GenerateResponse,
 }
 
+/// Output format for the brain tool
+#[derive(ValueEnum, Clone, Debug)]
+enum OutputFormat {
+    /// Standard text output
+    Text,
+    /// JSON formatted output
+    Json,
+}
+
+/// Response structure for JSON output
+#[derive(Serialize)]
+struct BrainResponse {
+    query: String,
+    search_terms: Vec<String>,
+    matched_files: Vec<search::SearchResult>,
+    response: String,
+}
+
 /// Brain Knowledge System - A CLI tool for querying your knowledge base
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -34,6 +54,10 @@ struct Args {
     /// Operation mode: extract-only, search-only, or generate-response
     #[clap(long, value_enum, default_value_t = Mode::GenerateResponse)]
     mode: Mode,
+    
+    /// Output format: text or json
+    #[clap(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
     
     /// Override the maximum number of files to use
     #[clap(long)]
@@ -67,32 +91,58 @@ async fn run() -> Result<()> {
     )?;
     
     // Extract search terms from query
-    println!("Extracting search terms from query...");
+    if matches!(args.format, OutputFormat::Text) {
+        println!("Extracting search terms from query...");
+    }
     let search_terms = ollama_client.extract_search_terms(&args.query).await?;
-    println!("Search terms: {:?}", search_terms);
     
-    // If extract_only mode, stop here
+    if matches!(args.format, OutputFormat::Text) {
+        println!("Search terms: {:?}", search_terms);
+    }
+    
+    // If extract_only mode, output and stop here
     if matches!(args.mode, Mode::ExtractOnly) {
+        if matches!(args.format, OutputFormat::Json) {
+            let response = BrainResponse {
+                query: args.query.clone(),
+                search_terms,
+                matched_files: vec![],
+                response: String::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
         return Ok(());
     }
     
     // Search files based on search terms
-    println!("Searching files...");
+    if matches!(args.format, OutputFormat::Text) {
+        println!("Searching files...");
+    }
     let search_results = search_files(&config, &search_terms)?;
     
-    if search_results.is_empty() {
+    if search_results.is_empty() && matches!(args.format, OutputFormat::Text) {
         println!("No matching files found.");
-        return Ok(());
     }
     
-    // Display search results
-    println!("\nFound {} matching files:", search_results.len());
-    for (i, result) in search_results.iter().enumerate() {
-        println!("{}. {} (relevance: {:.2})", i + 1, result.path, result.relevance);
+    // Display search results in text mode
+    if matches!(args.format, OutputFormat::Text) {
+        println!("\nFound {} matching files:", search_results.len());
+        for (i, result) in search_results.iter().enumerate() {
+            println!("{}. {} (relevance: {:.2})", i + 1, result.path, result.relevance);
+        }
     }
     
-    // If search_only mode, stop here
+    // If search_only mode, output and stop here
     if matches!(args.mode, Mode::SearchOnly) {
+        if matches!(args.format, OutputFormat::Json) {
+            let response = BrainResponse {
+                query: args.query.clone(),
+                search_terms,
+                matched_files: search_results,
+                response: String::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
         return Ok(());
     }
     
@@ -102,16 +152,31 @@ async fn run() -> Result<()> {
         .collect();
     
     // Retrieve file contents
-    println!("\nRetrieving file contents...");
+    if matches!(args.format, OutputFormat::Text) {
+        println!("\nRetrieving file contents...");
+    }
     let contents = get_contents(&file_paths)?;
     
     // Generate response using Ollama
-    println!("\nGenerating response...");
+    if matches!(args.format, OutputFormat::Text) {
+        println!("\nGenerating response...");
+    }
     let response = ollama_client.generate_response(&args.query, &contents).await?;
     
-    // Display the final response
-    println!("\nResponse:");
-    println!("{}", response);
+    // Output the final result
+    if matches!(args.format, OutputFormat::Text) {
+        println!("\nResponse:");
+        println!("{}", response);
+    } else {
+        // JSON output
+        let brain_response = BrainResponse {
+            query: args.query.clone(),
+            search_terms,
+            matched_files: search_results,
+            response,
+        };
+        println!("{}", serde_json::to_string_pretty(&brain_response)?);
+    }
     
     Ok(())
 }
