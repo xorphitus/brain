@@ -10,6 +10,16 @@ pub struct OllamaClient {
 }
 
 impl OllamaClient {
+    /// Truncates a string to a maximum number of characters, preserving Unicode character boundaries
+    fn truncate_to_char_limit(text: &str, max_chars: usize) -> String {
+        let char_count = text.chars().count();
+        if char_count > max_chars {
+            text.chars().take(max_chars).collect::<String>()
+        } else {
+            text.to_string()
+        }
+    }
+
     pub fn new(endpoint: &str, model: &str, max_context_length: usize) -> Result<Self> {
         let endpoint_with_protocol =
             if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
@@ -62,17 +72,13 @@ impl OllamaClient {
 
     /// Generates a response based on the query and context
     pub async fn generate_response(&self, query: &str, context: &str) -> Result<String> {
-        let context = if context.len() > self.max_context_length {
-            &context[..self.max_context_length]
-        } else {
-            context
-        };
+        let truncated_context = Self::truncate_to_char_limit(context, self.max_context_length);
 
         let system = "You are a knowledge assistant that provides accurate information based on the given context. Only use the provided information to answer queries. Do not make up facts or use external knowledge. Your answer must be in the same language as the query.";
         
         let prompt = format!(
             "Use the following information to answer the query:\n\nINFORMATION:\n{}\n\nQUERY:\n{}\n\nANSWER:",
-            context, query
+            truncated_context, query
         );
 
         let request = GenerationRequest::new(self.model.clone(), prompt)
@@ -91,6 +97,17 @@ impl OllamaClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_truncate_to_char_limit() {
+        let unicode_text = "こんにちは世界！これはテストです。".repeat(100);
+        let max_length = 10;
+        let truncated_context = OllamaClient::truncate_to_char_limit(&unicode_text, max_length);
+        
+        assert_eq!(truncated_context.chars().count(), max_length);        
+        assert!(unicode_text.starts_with(&truncated_context));
+        assert!(std::str::from_utf8(truncated_context.as_bytes()).is_ok());
+    }
 
     #[test]
     fn test_new_with_valid_url_with_protocol() {
