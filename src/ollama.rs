@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
+use url::Url;
 
 pub struct OllamaClient {
     client: Ollama,
@@ -9,35 +10,36 @@ pub struct OllamaClient {
 }
 
 impl OllamaClient {
-    pub fn new(endpoint: &str, model: &str, max_context_length: usize) -> Self {
-        // Parse endpoint to extract host and port
+    pub fn new(endpoint: &str, model: &str, max_context_length: usize) -> Result<Self> {
+        // Parse endpoint URL
         let endpoint = endpoint.trim_end_matches('/');
         
-        // Remove protocol if present
-        let host_port = if endpoint.starts_with("http://") {
-            &endpoint[7..]
-        } else if endpoint.starts_with("https://") {
-            &endpoint[8..]
+        // Ensure the endpoint has a protocol prefix
+        let endpoint_with_protocol = if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+            format!("http://{}", endpoint)
         } else {
-            endpoint
+            endpoint.to_string()
         };
         
-        // Split host and port
-        let parts: Vec<&str> = host_port.split(':').collect();
-        let host = parts[0].to_string();
-        let port = if parts.len() > 1 {
-            parts[1].parse().unwrap_or(11434)
-        } else {
-            11434 // Default Ollama port
-        };
+        // Parse the URL
+        let url = Url::parse(&endpoint_with_protocol)
+            .with_context(|| format!("Invalid endpoint URL: {}", endpoint))?;
+        
+        // Extract host
+        let host = url.host_str()
+            .with_context(|| format!("Missing host in endpoint URL: {}", endpoint))?
+            .to_string();
+        
+        // Extract port or use default
+        let port = url.port().unwrap_or(11434);
         
         let client = Ollama::new(host, port);
         
-        Self {
+        Ok(Self {
             client,
             model: model.to_string(),
             max_context_length,
-        }
+        })
     }
     
     /// Extracts keywords from a user query using Ollama
@@ -87,6 +89,67 @@ impl OllamaClient {
 
 #[cfg(test)]
 mod tests {
-    // Tests would be added here, but they would require mocking the Ollama API
-    // which is beyond the scope of this implementation
+    use super::*;
+
+    #[test]
+    fn test_new_with_valid_url_with_protocol() {
+        let result = OllamaClient::new(
+            "http://localhost:11434",
+            "model",
+            4096,
+        );
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        assert_eq!(client.model, "model");
+        assert_eq!(client.max_context_length, 4096);
+    }
+
+    #[test]
+    fn test_new_with_valid_url_without_protocol() {
+        let result = OllamaClient::new(
+            "localhost:11434",
+            "model",
+            4096,
+        );
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        assert_eq!(client.model, "model");
+        assert_eq!(client.max_context_length, 4096);
+    }
+
+    #[test]
+    fn test_new_with_valid_url_without_port() {
+        let result = OllamaClient::new(
+            "localhost",
+            "model",
+            4096,
+        );
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        assert_eq!(client.model, "model");
+        assert_eq!(client.max_context_length, 4096);
+    }
+
+    #[test]
+    fn test_new_with_valid_url_with_trailing_slash() {
+        let result = OllamaClient::new(
+            "http://localhost:11434/",
+            "model",
+            4096,
+        );
+        assert!(result.is_ok());
+        let client = result.unwrap();
+        assert_eq!(client.model, "model");
+        assert_eq!(client.max_context_length, 4096);
+    }
+
+    #[test]
+    fn test_new_with_invalid_url() {
+        let result = OllamaClient::new(
+            "invalid:url:format",
+            "model",
+            4096,
+        );
+        assert!(result.is_err());
+    }
 }

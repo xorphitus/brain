@@ -57,7 +57,7 @@ async fn run() -> Result<()> {
         &config.ollama.endpoint,
         &config.ollama.model,
         config.ollama.max_context_length,
-    );
+    )?;
     
     // Extract keywords from query
     println!("Extracting keywords from query...");
