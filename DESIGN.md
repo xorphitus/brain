@@ -86,7 +86,10 @@ max_files = 5  # Maximum number of files for search results
 brain [OPTIONS] <QUERY>
 
 OPTIONS:
-  --search-only    Stop after finding matching files (don't generate response)
+  --mode <MODE>    Operation mode: extract-only, search-only, or generate-response (default: generate-response)
+                   extract-only: Only extract and display search terms
+                   search-only: Extract terms and find matching files
+                   generate-response: Complete workflow including response generation
   --max-files N    Override the maximum number of files to use (default from config)
   --config PATH    Specify an alternative config file path
   --help           Display help information

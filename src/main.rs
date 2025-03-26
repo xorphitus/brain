@@ -4,13 +4,24 @@ mod content;
 mod ollama;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 use crate::config::{load_config, load_config_from_path};
 use crate::content::get_contents;
 use crate::ollama::OllamaClient;
 use crate::search::search_files;
+
+/// Operation mode for the brain tool
+#[derive(ValueEnum, Clone, Debug)]
+enum Mode {
+    /// Only extract and display search terms
+    ExtractOnly,
+    /// Extract terms and find matching files
+    SearchOnly,
+    /// Complete workflow including response generation
+    GenerateResponse,
+}
 
 /// Brain Knowledge System - A CLI tool for querying your knowledge base
 #[derive(Parser, Debug)]
@@ -20,9 +31,9 @@ struct Args {
     #[clap(required = true)]
     query: String,
     
-    /// Stop after finding matching files (don't generate response)
-    #[clap(long)]
-    search_only: bool,
+    /// Operation mode: extract-only, search-only, or generate-response
+    #[clap(long, value_enum, default_value_t = Mode::GenerateResponse)]
+    mode: Mode,
     
     /// Override the maximum number of files to use
     #[clap(long)]
@@ -31,10 +42,6 @@ struct Args {
     /// Specify an alternative config file path
     #[clap(long, value_parser)]
     config: Option<PathBuf>,
-    
-    /// Use mock search terms instead of calling Ollama (for testing)
-    #[clap(long)]
-    mock_search_terms: bool,
 }
 
 async fn run() -> Result<()> {
@@ -61,17 +68,13 @@ async fn run() -> Result<()> {
     
     // Extract search terms from query
     println!("Extracting search terms from query...");
-    let search_terms = if args.mock_search_terms {
-        // Use simple word splitting for mock search terms
-        println!("Using mock search terms (--mock-search-terms flag is set)");
-        args.query
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect()
-    } else {
-        ollama_client.extract_search_terms(&args.query).await?
-    };
+    let search_terms = ollama_client.extract_search_terms(&args.query).await?;
     println!("Search terms: {:?}", search_terms);
+    
+    // If extract_only mode, stop here
+    if matches!(args.mode, Mode::ExtractOnly) {
+        return Ok(());
+    }
     
     // Search files based on search terms
     println!("Searching files...");
@@ -88,8 +91,8 @@ async fn run() -> Result<()> {
         println!("{}. {} (relevance: {:.2})", i + 1, result.path, result.relevance);
     }
     
-    // If search_only flag is set, stop here
-    if args.search_only {
+    // If search_only mode, stop here
+    if matches!(args.mode, Mode::SearchOnly) {
         return Ok(());
     }
     
@@ -104,16 +107,7 @@ async fn run() -> Result<()> {
     
     // Generate response using Ollama
     println!("\nGenerating response...");
-    let response = if args.mock_search_terms {
-        println!("Using mock response (--mock-search-terms flag is set)");
-        format!(
-            "This is a mock response for the query: '{}'\n\nBased on the following files:\n{}",
-            args.query,
-            file_paths.join("\n")
-        )
-    } else {
-        ollama_client.generate_response(&args.query, &contents).await?
-    };
+    let response = ollama_client.generate_response(&args.query, &contents).await?;
     
     // Display the final response
     println!("\nResponse:");
