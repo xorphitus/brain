@@ -8,18 +8,12 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub knowledge: KnowledgeConfig,
-    pub mcp: McpConfig,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct KnowledgeConfig {
     pub root_path: String,
     pub max_files: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct McpConfig {
-    pub server_name: String,
 }
 
 /// Loads the configuration from the default path (~/.config/brain/config.toml)
@@ -62,9 +56,6 @@ pub fn create_test_config_for_tests(root_path: &Path) -> Config {
             root_path: root_path.to_string_lossy().to_string(),
             max_files: 5,
         },
-        mcp: McpConfig {
-            server_name: "brain-files".to_string(),
-        },
     }
 }
 
@@ -88,7 +79,6 @@ mod tests {
         writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
         writeln!(file, "max_files = 5").unwrap();
         writeln!(file, "").unwrap();
-        writeln!(file, "[mcp]").unwrap();
         writeln!(file, "server_name = \"brain-files\"").unwrap();
         
         (temp_dir, config_path)
@@ -103,7 +93,6 @@ mod tests {
         
         let config = config.unwrap();
         assert_eq!(config.knowledge.max_files, 5);
-        assert_eq!(config.mcp.server_name, "brain-files");
         
         // Clean up
         drop(temp_dir);
@@ -122,7 +111,6 @@ mod tests {
         
         let config = config.unwrap();
         assert_eq!(config.knowledge.max_files, 5);
-        assert_eq!(config.mcp.server_name, "brain-files");
         
         // Restore original HOME
         if let Some(home) = original_home {
