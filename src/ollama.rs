@@ -25,15 +25,11 @@ impl OllamaClient {
         let url = Url::parse(&endpoint_with_protocol)
             .with_context(|| format!("Invalid endpoint URL: {}", endpoint))?;
         
-        // Extract host
-        let host = url.host_str()
-            .with_context(|| format!("Missing host in endpoint URL: {}", endpoint))?
-            .to_string();
-        
         // Extract port or use default
         let port = url.port().unwrap_or(11434);
         
-        let client = Ollama::new(host, port);
+        // Create the client with the URL and port
+        let client = Ollama::new(endpoint_with_protocol, port);
         
         Ok(Self {
             client,
