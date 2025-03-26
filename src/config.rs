@@ -8,6 +8,14 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub knowledge: KnowledgeConfig,
+    pub ollama: OllamaConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OllamaConfig {
+    pub endpoint: String,
+    pub model: String,
+    pub max_context_length: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +64,11 @@ pub fn create_test_config_for_tests(root_path: &Path) -> Config {
             root_path: root_path.to_string_lossy().to_string(),
             max_files: 5,
         },
+        ollama: OllamaConfig {
+            endpoint: "http://localhost:11434".to_string(),
+            model: "mistral".to_string(),
+            max_context_length: 4096,
+        },
     }
 }
 
@@ -79,7 +92,10 @@ mod tests {
         writeln!(file, "root_path = \"{}\"", temp_dir.path().display()).unwrap();
         writeln!(file, "max_files = 5").unwrap();
         writeln!(file, "").unwrap();
-        writeln!(file, "server_name = \"brain-files\"").unwrap();
+        writeln!(file, "[ollama]").unwrap();
+        writeln!(file, "endpoint = \"http://localhost:11434\"").unwrap();
+        writeln!(file, "model = \"mistral\"").unwrap();
+        writeln!(file, "max_context_length = 4096").unwrap();
         
         (temp_dir, config_path)
     }
