@@ -32,9 +32,9 @@ struct Args {
     #[clap(long, value_parser)]
     config: Option<PathBuf>,
     
-    /// Use mock keywords instead of calling Ollama (for testing)
+    /// Use mock search terms instead of calling Ollama (for testing)
     #[clap(long)]
-    mock_keywords: bool,
+    mock_search_terms: bool,
 }
 
 async fn run() -> Result<()> {
@@ -59,23 +59,23 @@ async fn run() -> Result<()> {
         config.ollama.max_context_length,
     )?;
     
-    // Extract keywords from query
-    println!("Extracting keywords from query...");
-    let keywords = if args.mock_keywords {
-        // Use simple word splitting for mock keywords
-        println!("Using mock keywords (--mock-keywords flag is set)");
+    // Extract search terms from query
+    println!("Extracting search terms from query...");
+    let search_terms = if args.mock_search_terms {
+        // Use simple word splitting for mock search terms
+        println!("Using mock search terms (--mock-search-terms flag is set)");
         args.query
             .split_whitespace()
             .map(|s| s.to_string())
             .collect()
     } else {
-        ollama_client.extract_keywords(&args.query).await?
+        ollama_client.extract_search_terms(&args.query).await?
     };
-    println!("Keywords: {:?}", keywords);
+    println!("Search terms: {:?}", search_terms);
     
-    // Search files based on keywords
+    // Search files based on search terms
     println!("Searching files...");
-    let search_results = search_files(&config, &keywords)?;
+    let search_results = search_files(&config, &search_terms)?;
     
     if search_results.is_empty() {
         println!("No matching files found.");
@@ -104,8 +104,8 @@ async fn run() -> Result<()> {
     
     // Generate response using Ollama
     println!("\nGenerating response...");
-    let response = if args.mock_keywords {
-        println!("Using mock response (--mock-keywords flag is set)");
+    let response = if args.mock_search_terms {
+        println!("Using mock response (--mock-search-terms flag is set)");
         format!(
             "This is a mock response for the query: '{}'\n\nBased on the following files:\n{}",
             args.query,

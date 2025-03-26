@@ -32,29 +32,32 @@ impl OllamaClient {
         })
     }
 
-    /// Extracts keywords from a user query using Ollama
-    pub async fn extract_keywords(&self, query: &str) -> Result<Vec<String>> {
+    /// Extracts search terms from a user query using Ollama
+    /// This includes both direct terms from the query and related/recalled terms
+    pub async fn extract_search_terms(&self, query: &str) -> Result<Vec<String>> {
+        let system = "You are a search term extraction assistant. Your task is to analyze queries and extract useful search terms. You can detect the language of queries. For non-English queries, you provide terms in both the original language and English translations. For English queries, you provide terms in English only.";
         let prompt = format!(
-            "Extract the most important keywords from this query. Return only the keywords, one per line, with no additional text or explanation:\n\n{}",
+            "Extract the most important search terms from this query. Include both direct terms and related/recalled terms that would be useful for searching a knowledge base. Return only the terms, one per line, with no additional text or explanation:\n\n{}",
             query
         );
 
-        let request = GenerationRequest::new(self.model.clone(), prompt);
+        let request = GenerationRequest::new(self.model.clone(), prompt)
+            .system(system);
+            
         let response = self
             .client
             .generate(request)
             .await
-            .context("Failed to extract keywords using Ollama")?;
+            .context("Failed to extract search terms using Ollama")?;
 
-        // Parse the response to extract keywords
-        let keywords: Vec<String> = response
+        let terms: Vec<String> = response
             .response
             .lines()
             .map(|line| line.trim().to_string())
             .filter(|line| !line.is_empty())
             .collect();
 
-        Ok(keywords)
+        Ok(terms)
     }
 
     /// Generates a response based on the query and context
@@ -66,12 +69,19 @@ impl OllamaClient {
             context
         };
 
+        // System prompt defines the role and capabilities
+        let system = "You are a knowledge assistant that provides accurate information based on the given context. Only use the provided information to answer queries. Do not make up facts or use external knowledge.";
+        
+        // User prompt contains the specific task for this query
         let prompt = format!(
-            "Use the following information to answer the query. Only use the provided information and don't make up facts.\n\nINFORMATION:\n{}\n\nQUERY:\n{}\n\nANSWER:",
+            "Use the following information to answer the query:\n\nINFORMATION:\n{}\n\nQUERY:\n{}\n\nANSWER:",
             context, query
         );
 
-        let request = GenerationRequest::new(self.model.clone(), prompt);
+        // Create request with system and user prompts
+        let request = GenerationRequest::new(self.model.clone(), prompt)
+            .system(system);
+            
         let response = self
             .client
             .generate(request)
