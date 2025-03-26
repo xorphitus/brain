@@ -11,25 +11,19 @@ pub struct OllamaClient {
 
 impl OllamaClient {
     pub fn new(endpoint: &str, model: &str, max_context_length: usize) -> Result<Self> {
-        // Parse endpoint URL
-        let endpoint = endpoint.trim_end_matches('/');
-        
-        // Ensure the endpoint has a protocol prefix
         let endpoint_with_protocol = if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
             format!("http://{}", endpoint)
         } else {
             endpoint.to_string()
         };
         
-        // Parse the URL
         let url = Url::parse(&endpoint_with_protocol)
             .with_context(|| format!("Invalid endpoint URL: {}", endpoint))?;
         
-        // Extract port or use default
+        let host = url.host_str().unwrap_or("localhost");
         let port = url.port().unwrap_or(11434);
         
-        // Create the client with the URL and port
-        let client = Ollama::new(endpoint_with_protocol, port);
+        let client = Ollama::new(host, port);
         
         Ok(Self {
             client,
